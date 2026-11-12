@@ -1,0 +1,95 @@
+---
+# Shift-left validation: a commit is rejected if linting, formatting or YAML
+# validation fails.
+#
+# One-time setup per machine:
+#   pip install pre-commit          # or: pipx install pre-commit
+#   make install                    # poetry install --with dev in api/ and core_ml/
+#   make precommit-install          # install the git hooks
+#
+# The api/ and core_ml/ hooks run inside the same Poetry environments as Docker
+# and CI (poetry -C <package> run ...), so local runs and CI use exactly the
+# versions pinned in each poetry.lock.
+#
+# Not covered here, to keep the loop fast: a secrets/CVE/IaC scanner (e.g.
+# Trivy) and a security linter (e.g. Bandit). They are the obvious next step.
+default_language_version:
+  python: python3.12
+
+repos:
+  # ---------------------------------------------------------------------
+  # General file hygiene
+  # ---------------------------------------------------------------------
+  - repo: https://github.com/pre-commit/pre-commit-hooks
+    rev: v6.0.0
+    hooks:
+      - id: trailing-whitespace
+      - id: end-of-file-fixer
+      - id: check-added-large-files
+        args: [--maxkb=5120]
+      - id: check-yaml
+        args: [-m]
+
+  # ---------------------------------------------------------------------
+  # api/ and core_ml/: lint + format (ruff replaces black+isort) and tests
+  # ---------------------------------------------------------------------
+  - repo: local
+    hooks:
+      - id: api-ruff-lint
+        name: "api · ruff (lint)"
+        entry: poetry -C api run ruff check --fix
+        language: system
+        files: ^api/.*\.py$
+        pass_filenames: false
+
+      - id: api-ruff-format
+        name: "api · ruff (format)"
+        entry: poetry -C api run ruff format
+        language: system
+        files: ^api/.*\.py$
+        pass_filenames: false
+
+      - id: api-mypy
+        name: "api · mypy (type checking, lightweight)"
+        entry: poetry -C api run mypy .
+        language: system
+        files: ^api/.*\.py$
+        pass_filenames: false
+
+      - id: api-pytest
+        name: "api · pytest"
+        entry: poetry -C api run pytest
+        language: system
+        files: ^api/.*\.py$
+        pass_filenames: false
+
+      # -------------------------------------------------------------
+      # core_ml/: same quality pipeline
+      # -------------------------------------------------------------
+      - id: core-ml-ruff-lint
+        name: "core_ml · ruff (lint)"
+        entry: poetry -C core_ml run ruff check --fix
+        language: system
+        files: ^core_ml/(src|scripts|tests)/.*\.py$
+        pass_filenames: false
+
+      - id: core-ml-ruff-format
+        name: "core_ml · ruff (format)"
+        entry: poetry -C core_ml run ruff format
+        language: system
+        files: ^core_ml/(src|scripts|tests)/.*\.py$
+        pass_filenames: false
+
+      - id: core-ml-mypy
+        name: "core_ml · mypy (type checking, lightweight)"
+        entry: poetry -C core_ml run mypy src
+        language: system
+        files: ^core_ml/src/.*\.py$
+        pass_filenames: false
+
+      - id: core-ml-pytest
+        name: "core_ml · pytest"
+        entry: poetry -C core_ml run pytest
+        language: system
+        files: ^core_ml/(src|scripts|tests)/.*\.py$
+        pass_filenames: false

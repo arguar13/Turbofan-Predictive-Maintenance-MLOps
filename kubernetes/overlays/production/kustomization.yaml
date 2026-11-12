@@ -1,0 +1,16 @@
+apiVersion: kustomize.config.k8s.io/v1beta1
+kind: Kustomization
+
+resources:
+- ../../base
+
+# The CI deploy stage rewrites ONLY this block, declaratively:
+#   kustomize edit set image predictive-maintenance-mlops-api=<ECR>/predictive-maintenance-mlops-api:$CI_COMMIT_SHA
+# (Makefile target `deploy`), then runs `kubectl apply -k`; never `sed -i` on the
+# YAML. MLflow has no image to pin here: it runs the public ghcr.io image.
+images:
+# The base uses a logical name; CI resolves the ECR registry from AWS_ACCOUNT_ID
+# on every deploy. The committed value is a placeholder.
+- name: predictive-maintenance-mlops-api
+  newName: REDACTED_ACCOUNT_ID.dkr.ecr.us-east-1.amazonaws.com/predictive-maintenance-mlops-api
+  newTag: a7665252f1218574a10b9dae271126b0d701b3b4

@@ -1,0 +1,138 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: mlflow
+  namespace: mlops-env
+spec:
+  replicas: 2
+  selector:
+    matchLabels:
+      app: mlflow
+  template:
+    metadata:
+      labels:
+        app: mlflow
+    spec:
+      serviceAccountName: mlops-sa
+      # The upstream image runs as root by default; this forces the project's
+      # unprivileged UID. The server never writes to its root filesystem: the
+      # backend store is RDS and the artifact root is S3.
+      securityContext:
+        runAsNonRoot: true
+        runAsUser: 10001
+        runAsGroup: 10001
+        fsGroup: 10001
+        seccompProfile:
+          type: RuntimeDefault
+      # The official image has no Postgres driver, and without psycopg2 the
+      # server crashes at startup against RDS. To keep using that image as is
+      # (no custom build to maintain), an initContainer installs psycopg2-binary
+      # into a shared emptyDir that PYTHONPATH points to. With a read-only root
+      # filesystem, that volume is the only place anything can be installed.
+      initContainers:
+        - name: install-psycopg2
+          image: ghcr.io/mlflow/mlflow:v3.15.1
+          command:
+            - "pip"
+            - "install"
+            - "--no-cache-dir"
+            - "--target=/opt/pip-packages"
+            - "psycopg2-binary==2.9.9"
+          volumeMounts:
+            - name: pip-packages
+              mountPath: /opt/pip-packages
+      containers:
+        - name: mlflow
+          image: ghcr.io/mlflow/mlflow:v3.15.1
+          securityContext:
+            allowPrivilegeEscalation: false
+            readOnlyRootFilesystem: true
+            capabilities:
+              drop: ["ALL"]
+          command: ["mlflow", "server"]
+          args:
+            - "--host=0.0.0.0"
+            - "--port=5000"
+            - "--backend-store-uri=postgresql://$(POSTGRES_USER):$(POSTGRES_PASSWORD)@$(DB_HOST):5432/$(POSTGRES_DB)"
+            # Must match `terraform output s3_bucket_name` (terraform/s3.tf).
+            - "--default-artifact-root=s3://predictive-maintenance-mlops-artifacts-REDACTED_ACCOUNT_ID"
+          ports:
+            - containerPort: 5000
+          envFrom:
+            - configMapRef:
+                name: mlops-config
+            - secretRef:
+                name: mlops-secrets
+          env:
+            - name: HOME
+              value: /tmp
+            - name: PYTHONPATH
+              value: /opt/pip-packages
+            # MLflow 3 rejects Host headers other than localhost, 127.0.0.1 or a
+            # literal private IP (DNS-rebinding protection). The api calls
+            # "http://mlflow:5000" through the Service DNS, which would get 403
+            # "Invalid Host header", so the short name and the FQDN are allowed
+            # (same issue as in docker-compose.yml).
+            - name: MLFLOW_SERVER_ALLOWED_HOSTS
+              value: "mlflow,mlflow:*,mlflow.mlops-env,mlflow.mlops-env:*,mlflow.mlops-env.svc.cluster.local,mlflow.mlops-env.svc.cluster.local:*"
+          volumeMounts:
+            - name: tmp
+              mountPath: /tmp
+            - name: pip-packages
+              mountPath: /opt/pip-packages
+          # Without requests/limits the pod is BestEffort, the first one the
+          # kubelet evicts under memory pressure (KSV-0011/0015/0016/0018). A 1Gi
+          # limit got OOMKilled at startup against RDS; the t3.large nodes (8 GiB)
+          # have room for 2Gi.
+          resources:
+            requests:
+              memory: "1Gi"
+              cpu: "250m"
+            limits:
+              memory: "2Gi"
+              cpu: "1000m"
+          readinessProbe:
+            httpGet:
+              path: /health
+              port: 5000
+            initialDelaySeconds: 10
+            periodSeconds: 10
+          livenessProbe:
+            httpGet:
+              path: /health
+              port: 5000
+            initialDelaySeconds: 20
+            periodSeconds: 20
+      volumes:
+        - name: tmp
+          emptyDir: {}
+        - name: pip-packages
+          emptyDir: {}
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: mlflow
+  namespace: mlops-env
+spec:
+  selector:
+    app: mlflow
+  ports:
+    - port: 5000
+      targetPort: 5000
+  type: ClusterIP
+---
+# The MLflow server is stateless (state lives in RDS/S3), so two replicas need
+# no leader election. This PDB keeps a voluntary disruption (draining a node
+# during an EKS upgrade) from taking both down at once, which would leave the
+# api (it loads the model from here) and training without a tracking server.
+apiVersion: policy/v1
+kind: PodDisruptionBudget
+metadata:
+  name: mlflow-pdb
+  namespace: mlops-env
+spec:
+  minAvailable: 1
+  selector:
+    matchLabels:
+      app: mlflow

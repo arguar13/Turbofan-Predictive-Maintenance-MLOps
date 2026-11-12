@@ -1,0 +1,106 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: predictive-maintenance-api
+  namespace: mlops-env
+spec:
+  replicas: 2
+  selector:
+    matchLabels:
+      app: api
+  template:
+    metadata:
+      labels:
+        app: api
+    spec:
+      serviceAccountName: mlops-sa
+      # KSV-0118 / KSV-0104: without an explicit securityContext the pod inherits
+      # the runtime defaults (root, no seccomp). UID 10001 is the Dockerfile's
+      # "appuser".
+      securityContext:
+        runAsNonRoot: true
+        runAsUser: 10001
+        runAsGroup: 10001
+        fsGroup: 10001
+        seccompProfile:
+          type: RuntimeDefault
+      containers:
+        - name: api
+          # The overlay pins the tag (kustomize edit set image), never sed.
+          image: predictive-maintenance-mlops-api
+          imagePullPolicy: Always
+          command: ["uvicorn", "api.main:app", "--host", "0.0.0.0", "--port", "8000"]
+          # KSV-0014 / KSV-0001 / KSV-0003: read-only root filesystem, no
+          # privilege escalation, no capabilities. Code execution inside the
+          # container can neither drop a binary nor escalate.
+          securityContext:
+            allowPrivilegeEscalation: false
+            readOnlyRootFilesystem: true
+            capabilities:
+              drop: ["ALL"]
+          ports:
+            - containerPort: 8000
+          envFrom:
+            - configMapRef:
+                name: mlops-config
+            # API_KEY for /predict (api/main.py, require_api_key). The Secret is
+            # created out of band; secret.yaml documents its keys.
+            - secretRef:
+                name: mlops-secrets
+          env:
+            # With a read-only root, MLflow needs a writable HOME for its cache
+            # and for downloading the run's scaler (load_champion in api/main.py).
+            - name: HOME
+              value: /tmp
+          volumeMounts:
+            - name: tmp
+              mountPath: /tmp
+          resources:
+            requests:
+              memory: "512Mi"
+              cpu: "250m"
+            limits:
+              memory: "1Gi"
+              cpu: "1000m"
+          readinessProbe:
+            httpGet:
+              path: /health
+              port: 8000
+            initialDelaySeconds: 15
+            periodSeconds: 10
+          livenessProbe:
+            # Not /health: a missing champion says nothing about the process
+            # being alive, and restarting would only loop until the first
+            # training run.
+            tcpSocket:
+              port: 8000
+            initialDelaySeconds: 15
+            periodSeconds: 20
+      volumes:
+        # The container's only writable path: ephemeral, per pod.
+        - name: tmp
+          emptyDir: {}
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: predictive-maintenance-api
+  namespace: mlops-env
+spec:
+  type: LoadBalancer
+  selector:
+    app: api
+  ports:
+    - port: 8000
+      targetPort: 8000
+---
+apiVersion: policy/v1
+kind: PodDisruptionBudget
+metadata:
+  name: api-pdb
+  namespace: mlops-env
+spec:
+  minAvailable: 1
+  selector:
+    matchLabels:
+      app: api

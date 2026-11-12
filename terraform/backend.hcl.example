@@ -1,0 +1,8 @@
+# Example of the remote backend settings. The real file is generated with
+#   terraform -chdir=bootstrap output -raw backend_config > backend.hcl
+# and is git-ignored. Usage: terraform init -backend-config=backend.hcl
+bucket         = "predictive-maintenance-mlops-tfstate-<ACCOUNT_ID>"
+key            = "predictive-maintenance-mlops/terraform.tfstate"
+region         = "us-east-1"
+dynamodb_table = "predictive-maintenance-mlops-tfstate-locks"
+encrypt        = true

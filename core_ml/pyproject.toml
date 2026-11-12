@@ -1,0 +1,81 @@
+[tool.poetry]
+name = "predictive-maintenance-data"
+version = "2.0.0"
+description = "Data pipeline and model training"
+authors = ["Armando Guarnera"]
+packages = [{include = "src"}]
+
+[tool.poetry.dependencies]
+python = ">=3.12,<3.13"
+# Data Engineering
+pandas = ">=2.2.2" # first pandas built against numpy 2
+numpy = ">=2.0.0"
+pyarrow = ">=14.0.0"
+pydantic = "^2.9.0"
+pandera = {extras = ["pandas"], version = ">=0.24.0,<1.0.0"} # Data contracts
+dvc = {extras = ["s3"], version = "^3.0.0"}
+# S3 client for MLflow uploads to an s3:// artifact root (the EKS MLflow) and
+# for dvc-s3.
+boto3 = ">=1.38.27"
+
+# Machine Learning
+scikit-learn = ">=1.4.0"
+# CPU-only wheel (the "pytorch-cpu" source below): nothing here calls CUDA, both
+# the toy and the full training run on CPU. The default Linux wheel adds ~2 GB
+# of unused nvidia-* packages (cufft, cublas, cudnn, nvshmem...) that make
+# Docker builds time out on slow networks and in CI.
+torch = {version = "^2.13.0", source = "pytorch-cpu"}
+mlflow = "^3.15.1"
+dvc-s3 = "^3.3.0"
+
+# Observability
+structlog = "^26.1.0" # structured JSON logging (CloudWatch/Elasticsearch)
+
+[tool.poetry.group.dev.dependencies]
+ruff = "^0.16.4"
+mypy = "^1.13.0"
+types-pyyaml = "^6.0.12"
+pytest = "^8.3.3"
+pytest-cov = "^5.0.0"
+
+[[tool.poetry.source]]
+name = "pytorch-cpu"
+url = "https://download.pytorch.org/whl/cpu"
+priority = "explicit"
+
+[build-system]
+requires = ["poetry-core"]
+build-backend = "poetry.core.masonry.api"
+
+# ---------------------------------------------------------------------------
+# Shift-left tooling configuration
+# ---------------------------------------------------------------------------
+
+[tool.ruff]
+line-length = 100
+target-version = "py312"
+exclude = [".venv", "data", "data_toy", ".dvc"]
+
+[tool.ruff.lint]
+select = ["E", "F", "W", "B", "UP", "C4", "SIM"]
+ignore = []
+
+[tool.ruff.format]
+# ruff format replaces black + isort: same style, one tool.
+
+[tool.mypy]
+python_version = "3.12"
+mypy_path = ["src"]
+explicit_package_bases = true
+ignore_missing_imports = true
+check_untyped_defs = true
+warn_unused_configs = true
+warn_redundant_casts = true
+warn_unused_ignores = true
+no_implicit_optional = true
+exclude = ["tests/", "data/", "data_toy/"]
+
+[tool.pytest.ini_options]
+pythonpath = ["src"]
+testpaths = ["tests"]
+addopts = "-ra"

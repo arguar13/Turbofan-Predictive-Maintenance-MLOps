@@ -1,0 +1,19 @@
+apiVersion: kustomize.config.k8s.io/v1beta1
+kind: Kustomization
+
+# secret.yaml is deliberately NOT listed: it is only a template. The real
+# mlops-secrets Secret is created with `kubectl create secret ...` (README,
+# "Deploying to AWS"); listed here, every `kubectl apply -k` (make deploy, the
+# CI deploy job) would overwrite the real credentials with "changeme".
+resources:
+  - namespace.yaml
+  - serviceaccount.yaml
+  - configmap.yaml
+  - mlflow.yaml
+  - api.yaml
+  - hpa.yaml
+
+labels:
+  - pairs:
+      app.kubernetes.io/part-of: predictive-maintenance-mlops
+      app.kubernetes.io/managed-by: kustomize

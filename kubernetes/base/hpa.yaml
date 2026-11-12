@@ -1,0 +1,55 @@
+# Requires metrics-server in the cluster (installed with Helm, it is not an EKS
+# add-on like vpc-cni/coredns/kube-proxy):
+#   helm repo add metrics-server https://kubernetes-sigs.github.io/metrics-server/
+#   helm install metrics-server metrics-server/metrics-server -n kube-system
+#
+# Without it these HPAs exist but stay inert: `kubectl get hpa` shows
+# "<unknown>" targets and nothing ever scales.
+apiVersion: autoscaling/v2
+kind: HorizontalPodAutoscaler
+metadata:
+  name: api-hpa
+  namespace: mlops-env
+spec:
+  scaleTargetRef:
+    apiVersion: apps/v1
+    kind: Deployment
+    name: predictive-maintenance-api
+  minReplicas: 2
+  maxReplicas: 6
+  metrics:
+    - type: Resource
+      resource:
+        name: cpu
+        target:
+          type: Utilization
+          averageUtilization: 70
+  behavior:
+    # A 5-minute window before scaling down: otherwise a short spike scales up
+    # and immediately back down, paying a new pod's startup (loading the model
+    # from MLflow) more often than needed.
+    scaleDown:
+      stabilizationWindowSeconds: 300
+---
+apiVersion: autoscaling/v2
+kind: HorizontalPodAutoscaler
+metadata:
+  name: mlflow-hpa
+  namespace: mlops-env
+spec:
+  scaleTargetRef:
+    apiVersion: apps/v1
+    kind: Deployment
+    name: mlflow
+  minReplicas: 2
+  maxReplicas: 4
+  metrics:
+    - type: Resource
+      resource:
+        name: cpu
+        target:
+          type: Utilization
+          averageUtilization: 75
+  behavior:
+    scaleDown:
+      stabilizationWindowSeconds: 300

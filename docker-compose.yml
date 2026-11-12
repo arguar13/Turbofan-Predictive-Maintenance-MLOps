@@ -1,0 +1,134 @@
+# Runs EVERY component (Postgres, MLflow, the API and LocalStack as a fake AWS)
+# as throwaway local containers, to check they work together before touching
+# real RDS/EKS/S3.
+#
+# Usage:
+#   docker compose up -d          # start the whole stack
+#   export MLFLOW_TRACKING_URI=http://localhost:5001
+#   make train-toy                # (outside compose) trains and, if it passes
+#                                  # the quality gate, registers the champion
+#
+# The API starts without a model (healthcheck red) and retries the load every
+# 30 s, turning green on its own once a champion exists in this MLflow. Serving
+# a NEW champion after a retrain does need a restart:
+#   docker compose restart api
+
+services:
+  postgres:
+    image: postgres:18.3-alpine
+    environment:
+      POSTGRES_USER: mlflow_user
+      POSTGRES_PASSWORD: mlflow_password
+      POSTGRES_DB: mlflow_db
+    ports:
+      # Host port 5433, not 5432, so it can run next to other local Postgres
+      # instances. Container-to-container traffic (mlflow -> postgres:5432) uses
+      # the internal port and is unaffected.
+      - "5433:5432"
+    volumes:
+      - pgdata:/var/lib/postgresql
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U mlflow_user -d mlflow_db"]
+      interval: 5s
+      timeout: 5s
+      retries: 5
+
+  mlflow:
+    # The official MLflow image as is. It ships no Postgres driver, so the command
+    # below pip-installs psycopg2 before starting the server: no custom image to
+    # version and push, at the cost of a slightly slower start.
+    image: ghcr.io/mlflow/mlflow:v3.15.1
+    command: >
+      bash -c "pip install --no-cache-dir psycopg2-binary==2.9.9 &&
+      mlflow server
+      --host 0.0.0.0
+      --backend-store-uri postgresql://mlflow_user:mlflow_password@postgres:5432/mlflow_db
+      --serve-artifacts
+      --artifacts-destination /mlruns"
+    environment:
+      # MLflow 3 rejects any Host header other than localhost, 127.0.0.1 or a
+      # literal private IP (DNS-rebinding protection). The api service calls
+      # "http://mlflow:5000" through compose DNS, which would get a 403 "Invalid
+      # Host header" unless the service name is allowed explicitly.
+      MLFLOW_SERVER_ALLOWED_HOSTS: "mlflow,mlflow:*,localhost,localhost:*,127.0.0.1,127.0.0.1:*"
+    ports:
+      # Host port 5001, not 5000 (same reason as postgres). Inside the network it
+      # is still 5000 (see the api service's MLFLOW_TRACKING_URI).
+      - "5001:5000"
+    volumes:
+      - ./mlruns:/mlruns
+    depends_on:
+      postgres:
+        condition: service_healthy
+    healthcheck:
+      # The official image has no curl: Python hits /health instead.
+      test:
+        [
+          "CMD",
+          "python",
+          "-c",
+          "import urllib.request; urllib.request.urlopen('http://localhost:5000/health')",
+        ]
+      interval: 10s
+      timeout: 5s
+      retries: 10
+      start_period: 20s
+
+  # LocalStack: a local S3 (DVC remote, MLflow artifacts) with no real
+  # credentials or cost. localstack/init-aws.sh creates the bucket on startup.
+  localstack:
+    image: localstack/localstack:3.8
+    environment:
+      SERVICES: s3
+      DEFAULT_REGION: us-east-1
+      AWS_DEFAULT_REGION: us-east-1
+      AWS_ACCESS_KEY_ID: test
+      AWS_SECRET_ACCESS_KEY: test
+      PERSISTENCE: 0
+    ports:
+      # Host port 4567, not 4566 (same reason as postgres).
+      - "4567:4566"
+    volumes:
+      - ./localstack/init-aws.sh:/etc/localstack/init/ready.d/init-aws.sh:ro
+      - localstack_data:/var/lib/localstack
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:4566/_localstack/health"]
+      interval: 5s
+      timeout: 5s
+      retries: 15
+      start_period: 10s
+
+  # Serving API (FastAPI), loading the champion from this stack's MLflow; see the
+  # startup note at the top of this file.
+  api:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    environment:
+      MLFLOW_TRACKING_URI: http://mlflow:5000
+      # /predict requires X-API-Key (api/main.py::require_api_key). A fixed value
+      # for this local stack ONLY; in Kubernetes it comes from a Secret.
+      API_KEY: local-dev-only-key-change-me
+    ports:
+      # Host port 8001, not 8000 (same reason as postgres).
+      - "8001:8000"
+    depends_on:
+      mlflow:
+        condition: service_healthy
+    healthcheck:
+      # The runtime image has no curl (see Dockerfile): Python instead.
+      test:
+        [
+          "CMD",
+          "python",
+          "-c",
+          "import urllib.request; urllib.request.urlopen('http://localhost:8000/health', timeout=4)",
+        ]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+      start_period: 20s
+
+volumes:
+  pgdata:
+  localstack_data:

@@ -1,0 +1,13 @@
+# Non-sensitive values. Those that depend on Terraform-provisioned resources
+# (DB_HOST) come from `terraform output` after the apply; CI sets them per
+# environment with kustomize, never with sed.
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: mlops-config
+  namespace: mlops-env
+data:
+  MLFLOW_TRACKING_URI: "http://mlflow:5000"
+  # Placeholder: the real endpoint comes from `terraform output rds_endpoint`
+  # and is not versioned in a public repo.
+  DB_HOST: "REDACTED-RDS-ENDPOINT.rds.amazonaws.com"

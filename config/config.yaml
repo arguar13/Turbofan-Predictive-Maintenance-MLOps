@@ -1,0 +1,23 @@
+project:
+  name: "predictive_maintenance_turbofan"
+  version: "2.0.0"
+
+model:
+  # The only shape parameter that is a design decision: prepare_training_data.py
+  # windows with it and train.py reshapes with it. The number of features is
+  # deliberately NOT declared: it depends on the data (constant sensors are
+  # dropped in clean_and_prepare), and its source of truth is the scaler logged
+  # with the model. A hand-written value can silently disagree with the model
+  # and break /predict.
+  window_size: 30
+  mlflow_tracking_uri: "${MLFLOW_TRACKING_URI}"  # injected by Kubernetes / compose
+  model_name: "Turbofan_ConvTransformer"
+
+monitoring:
+  # Quality gate. The three classes are imbalanced and their errors are not
+  # equally costly: calling an engine about to fail Healthy or Alert is far worse
+  # than a false alarm. Weighted F2 weighs recall twice as much as precision;
+  # critical_recall_threshold is an INDEPENDENT floor on the Critical class,
+  # because a good overall F2 can hide a model that systematically misses it.
+  f2_weighted_threshold: 0.75
+  critical_recall_threshold: 0.75

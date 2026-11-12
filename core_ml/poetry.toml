@@ -1,0 +1,20 @@
+# Virtualenv inside the project (./.venv) instead of Poetry's global cache.
+#
+# On Windows the global cache path
+# (%LOCALAPPDATA%\pypoetry\Cache\virtualenvs\<project>-<hash>-py3.12\...)
+# uses ~117 characters before site-packages. Add torch's license paths
+# (torch-*.dist-info/licenses/third_party/kineto/libkineto/third_party/dynolog/
+# third_party/DCGM/testing/python3/libs_3rdparty/colorama/...) and it exceeds
+# the 260-character MAX_PATH, so `poetry install` aborts with "[WinError 206]
+# ... Cannot install torch."
+#
+# ./.venv saves ~45 characters, enough if the project path is short. With a
+# long project path not even that fits: create the venv on a short path (e.g.
+# C:\v611\core) and leave a junction to it in <package>/.venv (`mklink /J`).
+# The OS-level alternative needs admin rights, so it is not assumed here:
+#   HKLM\SYSTEM\CurrentControlSet\Control\FileSystem\LongPathsEnabled = 1
+#
+# Irrelevant for Docker and CI: the multi-stage Dockerfile installs into its own
+# active venv (/opt/venv) and the CI runners are Linux, with no MAX_PATH.
+[virtualenvs]
+in-project = true

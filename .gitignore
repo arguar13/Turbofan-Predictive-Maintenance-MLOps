@@ -1,0 +1,65 @@
+# Virtual environments
+venv/
+env/
+.venv/
+
+# Python
+__pycache__/
+*.py[cod]
+
+# Local MLflow tracking and models (SQLite / file store)
+mlruns/
+mlartifacts/
+mlflow.db
+
+# DVC and data: the data itself is ignored, the .dvc pointers are tracked
+data/
+!*.dvc
+!/data/.keep
+.dvc/config.local
+
+# Environment variables and credentials. Specific patterns, not a global
+# `*.json`, which would also hide legitimate files such as
+# .devcontainer/devcontainer.json.
+.env
+.env.*
+*credentials*.json
+*service-account*.json
+*.pem
+*.key
+volume/
+
+# Logs
+*.log
+
+# Testing and code quality
+.pytest_cache/
+.mypy_cache/
+.ruff_cache/
+.coverage
+htmlcov/
+
+# IDEs and notebooks
+.vscode/
+.idea/
+.ipynb_checkpoints/
+/data
+
+# Terraform providers, modules and local state (terraform/bootstrap/ included,
+# which is applied separately with its own state).
+.terraform/
+*.tfstate
+*.tfstate.*
+*.tfvars
+*.tfvars.json
+# Remote backend settings carry the account ID (see terraform/backend.hcl.example).
+backend.hcl
+# Saved plans (terraform plan -out) embed a copy of the config and the resolved
+# sensitive values.
+*.tfplan
+
+# gitlab-ci-local (local pipeline validation)
+.gitlab-ci-local/
+
+# Portfolio blog drafts (text, images, cover): not versioned
+blog/

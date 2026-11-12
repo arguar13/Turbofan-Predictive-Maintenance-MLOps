@@ -1,0 +1,20 @@
+# Allowlist: the root Dockerfile (the API) only needs api/ and config/;
+# everything else stays out of the build context.
+#
+# Deny patterns such as `.venv/` only match at the ROOT of the context in
+# .dockerignore, so a denylist would still ship api/.venv (over 1 GB with torch)
+# to the daemon and into the image through `COPY api/ ./api/`.
+*
+!api/
+!config/
+
+# Inside api/: no environments, caches or tests.
+api/.venv/
+api/**/__pycache__/
+api/**/*.py[cod]
+api/.pytest_cache/
+api/.mypy_cache/
+api/.ruff_cache/
+api/.coverage
+api/htmlcov/
+api/tests/

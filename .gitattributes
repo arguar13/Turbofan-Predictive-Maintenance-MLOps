@@ -1,0 +1,29 @@
+# LF in the repository whatever the local OS: no noisy diffs, and no CRLF false
+# positives from yamllint/pre-commit on Windows.
+* text=auto eol=lf
+
+*.py text eol=lf
+*.pyi text eol=lf
+*.yaml text eol=lf
+*.yml text eol=lf
+*.toml text eol=lf
+*.json text eol=lf
+*.md text eol=lf
+*.sh text eol=lf
+*.cfg text eol=lf
+*.ini text eol=lf
+Makefile text eol=lf
+Dockerfile text eol=lf
+
+# Binary formats: never touch line endings or produce text diffs.
+*.parquet binary
+*.joblib binary
+*.pkl binary
+*.pt binary
+*.pth binary
+*.png binary
+*.jpg binary
+*.jpeg binary
+*.gif binary
+*.pdf binary
+*.db binary
